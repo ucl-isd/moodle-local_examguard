@@ -27,6 +27,6 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_examguard';
 $plugin->release = '0.1.0';
-$plugin->version = 2024040400;
+$plugin->version = 2024041000;
 $plugin->requires = 2023100900;
 $plugin->maturity = MATURITY_ALPHA;

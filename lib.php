@@ -34,10 +34,11 @@ use local_examguard\manager;
 function local_examguard_before_standard_top_of_body_html(): string {
     global $PAGE, $USER;
 
-    try {
-        // Check if the current page is a course view page.
-        if (str_contains($PAGE->pagetype, 'course-view') && $PAGE->course->id != SITEID) {
-            // Check exam guard is enabled.
+    // Check if the current page is a course view page or a module view page.
+    if ((str_contains($PAGE->pagetype, 'course-view') || preg_match('/mod-(.+?)-view/', $PAGE->pagetype))
+        && $PAGE->course->id != SITEID) {
+        try {
+            // Exam guard is enabled.
             if (get_config('local_examguard', 'enabled')) {
 
                 // Do nothing if the current user is not an editing role, e.g. student.
@@ -46,23 +47,64 @@ function local_examguard_before_standard_top_of_body_html(): string {
                 }
 
                 // Ban course editing if the exam is in progress / release course editing if the exam is finished.
-                $editingbanned = manager::check_course_exam_status($PAGE->course->id);
+                list($editingbanned, $activeexamactivities) = manager::check_course_exam_status($PAGE->course->id);
 
                 // Add notification if course editing is banned.
                 if ($editingbanned) {
-                    notification::add(
-                        '<h4>
-                            <i class="fa-solid fa-user-clock fa-lg text-danger ml-2 mr-3"></i>
-                            ' . get_string('warningmessage', 'local_examguard') . '
-                        </h4>',
-                        notification::ERROR
-                    );
+                    manager::show_notfication_banner($activeexamactivities);
                 }
             }
+        } catch (Exception $e) {
+            notification::add($e->getMessage(), notification::ERROR);
         }
-    } catch (Exception $e) {
-        notification::add($e->getMessage(), notification::ERROR);
     }
 
     return '';
+}
+
+/**
+ * Validate the data in the new field when the form is submitted
+ *
+ * @param moodleform_mod $fromform
+ * @param array $fields
+ * @return string[]|void
+ */
+function local_examguard_coursemodule_validation($fromform, $fields) {
+    try {
+        // Exam Guard is enabled.
+        if (get_config('local_examguard', 'enabled')) {
+            // Prevent change to activity if the course is in exam mode and the user is not a site admin.
+            if (!has_capability('moodle/site:config', context_system::instance()) &&
+                manager::should_prevent_course_editing($fields['course'])) {
+                // Return an error message to prevent saving changes, but the user will not see it.
+                return ['examguard' => get_string('errorcourseeditingbanned', 'local_examguard')];
+            }
+        }
+    } catch (Exception $e) {
+        // Show error message when exception is caught.
+        notification::add($e->getMessage(), notification::ERROR);
+    }
+}
+
+/**
+ * Process data from submitted form.
+ *
+ * @param stdClass $data
+ * @param stdClass $course
+ */
+function local_examguard_coursemodule_edit_post_actions($data, $course) {
+    try {
+        // Exam Guard is enabled.
+        if (get_config('local_examguard', 'enabled')) {
+            // Execute Exam Guard actions if the module is an exam activity.
+            if (in_array($data->modulename, manager::EXAM_ACTIVITIES)) {
+                manager::check_course_exam_status($course->id);
+            }
+        }
+    } catch (Exception $e) {
+        // Show error message when exception is caught.
+        notification::add($e->getMessage(), notification::ERROR);
+    }
+
+    return $data;
 }

@@ -25,20 +25,42 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$settings = new admin_settingpage('local_examguard_settings', new lang_string('pluginname', 'local_examguard'));
-$ADMIN->add('localplugins', $settings);
+if ($hassiteconfig) {
+    $ADMIN->add('localplugins', new admin_category('local_examguard_settings', new lang_string('pluginname', 'local_examguard')));
+    $settingspage = new admin_settingpage('managelocalexamguard', new lang_string('settings:manage', 'local_examguard'));
 
-if ($ADMIN->fulltree) {
-    // General settings.
-    $settings->add(new admin_setting_heading('local_examguard_general_settings',
-        get_string('settings:generalsettingsheader', 'local_examguard'),
-        ''
-    ));
-    // Setting to enable/disable the plugin.
-    $settings->add(new admin_setting_configcheckbox(
-        'local_examguard/enabled',
-        get_string('settings:enable', 'local_examguard'),
-        get_string('settings:enable:desc', 'local_examguard'),
-        '1'
-    ));
+    if ($ADMIN->fulltree) {
+        // General settings.
+        $settingspage->add(new admin_setting_heading('local_examguard_general_settings',
+            get_string('settings:generalsettingsheader', 'local_examguard'),
+            ''
+        ));
+        // Setting to enable/disable the plugin.
+        $settingspage->add(new admin_setting_configcheckbox(
+            'local_examguard/enabled',
+            get_string('settings:enable', 'local_examguard'),
+            get_string('settings:enable:desc', 'local_examguard'),
+            '1'
+        ));
+
+        // Exam duration setting, default to 300 minutes, i.e. 5 hours.
+        $settingspage->add(new admin_setting_configtext(
+            'local_examguard/examduration',
+            get_string('settings:examduration', 'local_examguard'),
+            get_string('settings:examduration_desc', 'local_examguard'),
+            300,
+            PARAM_INT
+        ));
+
+        // Time buffer setting, default to 10 minutes.
+        $settingspage->add(new admin_setting_configtext(
+            'local_examguard/timebuffer',
+            get_string('settings:timebuffer', 'local_examguard'),
+            get_string('settings:timebuffer_desc', 'local_examguard'),
+            10,
+            PARAM_INT
+        ));
+    }
+
+    $ADMIN->add('localplugins', $settingspage);
 }
