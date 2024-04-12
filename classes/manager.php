@@ -18,6 +18,7 @@ namespace local_examguard;
 
 use cache;
 use context_course;
+use core\notification;
 
 /**
  * Manager class for local_examguard.
@@ -68,6 +69,13 @@ class manager {
                     }
                 }
             }
+        }
+
+        if (!empty($activities)) {
+            // Sort the activities by end time in descending order.
+            usort($activities, function ($a, $b) {
+                return $b->get_exam_end_time() <=> $a->get_exam_end_time();
+            });
         }
 
         return $activities;
@@ -162,26 +170,49 @@ class manager {
      * Depends on course's exam status, add/remove the exam guard role.
      *
      * @param int $courseid
-     * @return bool
+     * @return array
      * @throws \dml_exception
      * @throws \moodle_exception
      */
-    public static function check_course_exam_status(int $courseid) {
+    public static function check_course_exam_status(int $courseid): array {
         global $DB;
 
         $editbanned = $DB->get_record('local_examguard', ['courseid' => $courseid]);
-        $preventediting = self::should_prevent_course_editing($courseid);
+        $activeexamactivities = self::get_active_exam_activities($courseid);
+        $preventediting = !empty($activeexamactivities);
 
         // Added exam guard role to all users having editing roles in the course already.
         if ($editbanned && $preventediting) {
             // Do nothing and show the notification message.
-            return true;
+            return [true, $activeexamactivities];
         } else if (!$editbanned && !$preventediting) {
             // Do nothing and do not show the notification message.
-            return false;
+            return [false, $activeexamactivities];
         }
 
-        return self::handle_users_roles($courseid, $preventediting);
+        return [self::handle_users_roles($courseid, $preventediting), $activeexamactivities];
+    }
+
+    /**
+     * Show notification banner.
+     *
+     * @param array $activeexamactivities
+     * @return void
+     */
+    public static function show_notfication_banner(array $activeexamactivities): void {
+        global $PAGE;
+
+        if (!empty($activeexamactivities)) {
+            // Get the active exam activity with the latest end time.
+            $latestexamactivity = reset($activeexamactivities);
+            $renderer = $PAGE->get_renderer('local_examguard');
+
+            // Add notification banner.
+            notification::add(
+                $renderer->render_notification_banner($latestexamactivity->get_exam_end_time()),
+                notification::ERROR
+            );
+        }
     }
 
     /**

@@ -26,15 +26,27 @@ namespace local_examguard\examactivity;
  */
 abstract class examactivity {
     /** @var \stdClass Activity instance */
-    protected $activityinstance;
+    public \stdClass $activityinstance;
+
+    /** @var int Time buffer before/after exam period */
+    public int $timebuffer;
+
+    /** @var int Exam duration */
+    public int $examduration;
 
     /**
      * Constructor.
      *
      * @param \stdClass $activityinstance The activity instance.
+     * @throws \dml_exception
      */
     public function __construct(\stdClass $activityinstance) {
+        // Set activity instance.
         $this->activityinstance = $activityinstance;
+
+        // Get time buffer and exam duration settings in seconds.
+        $this->timebuffer = get_config('local_examguard', 'timebuffer') * 60;
+        $this->examduration = get_config('local_examguard', 'examduration') * 60;
     }
 
     /**
@@ -50,4 +62,11 @@ abstract class examactivity {
      * @return bool
      */
     abstract public function is_active_exam_activity(): bool;
+
+    /**
+     * Get the exam end time including buffer time.
+     *
+     * @return int
+     */
+    abstract public function get_exam_end_time(): int;
 }

@@ -25,12 +25,6 @@ namespace local_examguard\examactivity;
  * @author     Alex Yeung <k.yeung@ucl.ac.uk>
  */
 class quiz extends examactivity {
-    /** @var int Time buffer (20 minutes) before/after exam period. */
-    const TIME_BUFFER = 60 * 20;
-
-    /** @var int Exam duration less than this value (5 hours) will be counted as exam */
-    const EXAM_DURATION = 3600 * 5;
-
     /**
      * Check if the quiz is an exam activity.
      *
@@ -39,8 +33,8 @@ class quiz extends examactivity {
     public function is_exam_activity(): bool {
         // Timeopen and timeclose are set.
         if ($this->activityinstance->timeopen != 0 && $this->activityinstance->timeclose != 0) {
-            // Quiz is considered an exam activity if the time between open and close is less than 5 hours.
-            return ($this->activityinstance->timeclose - $this->activityinstance->timeopen) < self::EXAM_DURATION;
+            // Quiz is considered an exam activity if the time between open and close is less than configured exam duration.
+            return ($this->activityinstance->timeclose - $this->activityinstance->timeopen) < $this->examduration;
         }
 
         return false;
@@ -54,10 +48,19 @@ class quiz extends examactivity {
     public function is_active_exam_activity(): bool {
         if ($this->is_exam_activity()) {
             $now = time();
-            return ($this->activityinstance->timeopen - self::TIME_BUFFER < $now &&
-                $this->activityinstance->timeclose + self::TIME_BUFFER > $now);
+            return ($this->activityinstance->timeopen - $this->timebuffer < $now &&
+                $this->activityinstance->timeclose + $this->timebuffer > $now);
         }
 
         return false;
+    }
+
+    /**
+     * Get the exam end time including buffer time (in unix timestamp).
+     *
+     * @return int
+     */
+    public function get_exam_end_time(): int {
+        return $this->activityinstance->timeclose + $this->timebuffer;
     }
 }
