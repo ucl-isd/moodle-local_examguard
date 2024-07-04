@@ -27,42 +27,6 @@ use local_examguard\manager;
  */
 
 /**
- * Function to add notification to the top of the page if the exam is in progress.
- *
- * @return string
- */
-function local_examguard_before_standard_top_of_body_html(): string {
-    global $PAGE, $USER;
-
-    // Check if the current page is a course view page or a module view page.
-    if ((str_contains($PAGE->pagetype, 'course-view') || preg_match('/mod-(.+?)-view/', $PAGE->pagetype))
-        && $PAGE->course->id != SITEID) {
-        try {
-            // Exam guard is enabled.
-            if (get_config('local_examguard', 'enabled')) {
-
-                // Do nothing if the current user is not an editing role, e.g. student.
-                if (!manager::user_has_an_editing_role($PAGE->course->id, $USER->id)) {
-                    return '';
-                }
-
-                // Ban course editing if the exam is in progress / release course editing if the exam is finished.
-                list($editingbanned, $activeexamactivities) = manager::check_course_exam_status($PAGE->course->id);
-
-                // Add notification if course editing is banned.
-                if ($editingbanned) {
-                    manager::show_notfication_banner($activeexamactivities);
-                }
-            }
-        } catch (Exception $e) {
-            notification::add($e->getMessage(), notification::ERROR);
-        }
-    }
-
-    return '';
-}
-
-/**
  * Validate the data in the new field when the form is submitted
  *
  * @param moodleform_mod $fromform
