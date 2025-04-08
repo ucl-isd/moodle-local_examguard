@@ -41,7 +41,7 @@ function local_examguard_coursemodule_validation($fromform, $fields) {
             if (!has_capability('moodle/site:config', context_system::instance()) &&
                 manager::should_prevent_course_editing($fields['course'])) {
                 // Return an error message to prevent saving changes, but the user will not see it.
-                return ['examguard' => get_string('errorcourseeditingbanned', 'local_examguard')];
+                return ['examguard' => get_string('error:course_editing_banned', 'local_examguard')];
             }
         }
     } catch (Exception $e) {
@@ -61,7 +61,7 @@ function local_examguard_coursemodule_edit_post_actions($data, $course) {
         // Exam Guard is enabled.
         if (get_config('local_examguard', 'enabled')) {
             // Execute Exam Guard actions if the module is an exam activity.
-            if (in_array($data->modulename, manager::EXAM_ACTIVITIES)) {
+            if (manager::is_exam_guard_supported_activity($data->modulename)) {
                 manager::check_course_exam_status($course->id);
             }
         }

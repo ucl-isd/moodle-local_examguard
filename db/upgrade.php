@@ -31,5 +31,36 @@
  * @return bool
  */
 function xmldb_local_examguard_upgrade($oldversion) {
+    global $DB;
+    $dbman = $DB->get_manager();
+
+    if ($oldversion < 2025040900) {
+        // Define table local_examguard_extension_history to be created.
+        $table = new xmldb_table('local_examguard_extension_history');
+
+        // Adding fields to table local_examguard_extension_history.
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('extensionminutes', XMLDB_TYPE_INTEGER, '5', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('usermodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+
+        // Adding keys to table local_examguard_extension_history.
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        // Adding indexes to table local_examguard_extension_history.
+        $table->add_index('idx_cmid', XMLDB_INDEX_NOTUNIQUE, ['cmid']);
+        $table->add_index('idx_usermodified', XMLDB_INDEX_NOTUNIQUE, ['usermodified']);
+        $table->add_index('idx_timecreated', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+
+        // Conditionally launch create table for local_examguard_extension_history.
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // Examguard savepoint reached.
+        upgrade_plugin_savepoint(true, 2025040900, 'local', 'examguard');
+    }
+
     return true;
 }

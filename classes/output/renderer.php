@@ -16,6 +16,9 @@
 
 namespace local_examguard\output;
 
+use context_course;
+use local_examguard\examactivity\examactivityfactory;
+use local_examguard\manager;
 use plugin_renderer_base;
 
 /**
@@ -40,5 +43,40 @@ class renderer extends plugin_renderer_base {
             'local_examguard/notification_banner',
             ['examendtime' => date('h:i a', $examendtime)]
         );
+    }
+
+    /**
+     * Render extend time button.
+     *
+     * @return string
+     */
+    public function render_extend_time_button(): string {
+        if (preg_match('/mod-(.+?)-view/', $this->page->pagetype) &&
+            manager::is_exam_guard_supported_activity($this->page->cm->modname) &&
+            get_config('local_examguard', 'bulkextension')
+        ) {
+            try {
+                $examactivity = examactivityfactory::get_exam_activity($this->page->cm->id, $this->page->cm->modname);
+                if ($examactivity->is_active_exam_activity()) {
+                    $extendtimeurl = new \moodle_url(
+                        '/local/examguard/extend_time.php',
+                        [
+                            'courseid' => $this->page->course->id,
+                            'cmid' => $this->page->cm->id,
+                        ]
+                    );
+                    return $this->render_from_template(
+                        'local_examguard/extend_time_button',
+                        [
+                            'extendtimeurl' => $extendtimeurl->out(false),
+                            'activityname' => $this->page->cm->get_formatted_name(),
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                return get_string('error:failed_to_create_time_extension_button', 'local_examguard', $e->getMessage());
+            }
+        }
+        return '';
     }
 }

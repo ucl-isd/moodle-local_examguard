@@ -60,6 +60,14 @@ if ($hassiteconfig) {
             10,
             PARAM_INT
         ));
+
+        // Setting to enable/disable the plugin.
+        $settingspage->add(new admin_setting_configcheckbox(
+            'local_examguard/bulkextension',
+            get_string('settings:bulkextension', 'local_examguard'),
+            '',
+            '1'
+        ));
     }
 
     $ADMIN->add('localplugins', $settingspage);
