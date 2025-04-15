@@ -16,7 +16,9 @@
 
 namespace local_examguard\local;
 
+use context_course;
 use core\hook\output\before_standard_top_of_body_html_generation;
+use core\notification;
 use local_examguard\manager;
 
 /**
@@ -52,12 +54,16 @@ class hook_callbacks {
                     // Ban course editing if the exam is in progress / release course editing if the exam is finished.
                     list($editingbanned, $activeexamactivities) = manager::check_course_exam_status($PAGE->course->id);
 
-                    // Add notification if course editing is banned.
+                    // Add notification if a course editing is banned.
                     if ($editingbanned) {
                         manager::show_notfication_banner($activeexamactivities);
+
+                        // Show extend time button if applicable.
+                        $renderer = $PAGE->get_renderer('local_examguard');
+                        $PAGE->add_header_action($renderer->render_extend_time_button());
                     }
                 }
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 notification::add($e->getMessage(), notification::ERROR);
             }
         }

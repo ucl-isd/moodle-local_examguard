@@ -44,7 +44,7 @@ function xmldb_local_examguard_install() {
 
         // Throw an exception if the role was not created.
         if (!$roleid) {
-            throw new \moodle_exception('errorcreaterole', 'local_examguard');
+            throw new \moodle_exception('error:create_role', 'local_examguard');
         }
 
         // Only allow the role to be assigned in the course context.

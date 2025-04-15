@@ -19,6 +19,7 @@ namespace local_examguard;
 use cache;
 use context_course;
 use core\notification;
+use local_examguard\examactivity\examactivityfactory;
 
 /**
  * Manager class for local_examguard.
@@ -60,13 +61,16 @@ class manager {
         foreach (self::EXAM_ACTIVITIES as $activityname) {
             $activityinstances = get_all_instances_in_course($activityname, $course);
 
-            if (!empty($activityinstances)) {
-                $classname = 'local_examguard\examactivity\\' . $activityname;
-                foreach ($activityinstances as $activityinstance) {
-                    $examactivity = new $classname($activityinstance);
-                    if ($examactivity->is_active_exam_activity()) {
-                        $activities[] = $examactivity;
-                    }
+            // Skip if no activity instances found for this activity type.
+            if (empty($activityinstances)) {
+                continue;
+            }
+
+            // Put active exam activities into an array.
+            foreach ($activityinstances as $activityinstance) {
+                $examactivity = examactivityfactory::get_exam_activity($activityinstance->coursemodule, $activityname);
+                if ($examactivity->is_active_exam_activity()) {
+                    $activities[] = $examactivity;
                 }
             }
         }
@@ -243,7 +247,7 @@ class manager {
 
         // Exam guard role does not exist.
         if (empty($examguardrole)) {
-            throw new \moodle_exception('errorrolenotexists', 'local_examguard');
+            throw new \moodle_exception('error:role_not_exists', 'local_examguard');
         }
 
         // Get override record.
@@ -274,5 +278,33 @@ class manager {
         }
 
         return false;
+    }
+
+    /**
+     * Check if the module is exam guard supported.
+     *
+     * @param string $modname
+     * @return bool
+     */
+    public static function is_exam_guard_supported_activity(string $modname): bool {
+        return in_array($modname, self::EXAM_ACTIVITIES);
+    }
+
+    /**
+     * Returns the course module instance and the activity instance.
+     *
+     * @param int $cmid course module ID.
+     * @return array
+     */
+    public static function get_module_from_cmid(int $cmid): array {
+        global $DB;
+
+        // Get course module instance.
+        $cm = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
+
+        // Get activity module instance.
+        $module = $DB->get_record($cm->modname, ['id' => $cm->instance], '*', MUST_EXIST);
+        $module->cmid = $cm->id;
+        return [$cm, $module];
     }
 }

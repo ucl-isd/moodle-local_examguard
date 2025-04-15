@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/examguard/db" VERSION="20240404" COMMENT="XMLDB file for Moodle local/examguard"
+<XMLDB PATH="local/examguard/db" VERSION="20250409" COMMENT="XMLDB file for Moodle local/examguard"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -14,6 +14,23 @@
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
         <KEY NAME="courseid" TYPE="unique" FIELDS="courseid"/>
       </KEYS>
+    </TABLE>
+    <TABLE NAME="local_examguard_extension_history" COMMENT="Store the course module that has extension">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Course module ID"/>
+        <FIELD NAME="extensionminutes" TYPE="int" LENGTH="5" NOTNULL="true" SEQUENCE="false" COMMENT="Time extension in minutes"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="usermodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_cmid" UNIQUE="false" FIELDS="cmid"/>
+        <INDEX NAME="idx_usermodified" UNIQUE="false" FIELDS="usermodified"/>
+        <INDEX NAME="idx_timecreated" UNIQUE="false" FIELDS="timecreated"/>
+      </INDEXES>
     </TABLE>
   </TABLES>
 </XMLDB>

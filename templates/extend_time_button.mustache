@@ -29,10 +29,11 @@
 
     Example context (json):
     {
-        "examendtime":"05:10 pm"
+        "extendtimeurl":"https://moodlesite/local/examguard/extend_time.php?courseid=2&cmid=28",
+        "activityname":"Test quiz 1"
     }
 }}
-<h4>
-    <i class="fa-solid fa-user-clock fa-lg text-danger ml-2 mr-3"></i>
-    {{#str}} warningmessage, local_examguard, {{examendtime}} {{/str}}
-</h4>
+<a id="extend_time_button" href="{{extendtimeurl}}" class="btn btn-danger">
+    {{#str}} label:extend_time_button, local_examguard {{/str}}
+    <span class="sr-only"> for {{activityname}}</span>
+</a>
