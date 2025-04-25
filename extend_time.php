@@ -63,7 +63,7 @@ if (get_config('local_examguard', 'bulkextension') !== '1') {
     // Do not allow extends time for non-active exam activities.
     \core\notification::error(get_string('error:not_active_exam_activity', 'local_examguard'));
 } else {
-    $currentextension = $examactivity->get_current_extension();
+    $currentextension = $examactivity->get_latest_extension();
 
     // A time extension is set, load it into the form field.
     if ($currentextension > 0) {
@@ -77,7 +77,7 @@ if (get_config('local_examguard', 'bulkextension') !== '1') {
         // Verify sesskey for security.
         require_sesskey();
         $examactivity->apply_extension($fromform->extendtime);
-        $mform->set_data(['extendtime' => $examactivity->get_current_extension()]);
+        $mform->set_data(['extendtime' => $examactivity->get_latest_extension()]);
         \core\notification::success(get_string('notification:update_success', 'local_examguard'));
     }
     $mform->display();

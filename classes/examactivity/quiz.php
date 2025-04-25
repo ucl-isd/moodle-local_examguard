@@ -16,6 +16,7 @@
 
 namespace local_examguard\examactivity;
 
+use core\exception\moodle_exception;
 use mod_quiz\local\override_manager;
 
 /**
@@ -47,7 +48,6 @@ class quiz extends examactivity {
      *
      * @param int $extensionminutes Number of minutes to extend
      * @return void
-     *
      * @throws \required_capability_exception
      */
     public function apply_extension(int $extensionminutes): void {
@@ -62,26 +62,20 @@ class quiz extends examactivity {
         $transaction = $DB->start_delegated_transaction();
 
         try {
-            // Convert minutes to seconds.
-            $extensionseconds = $extensionminutes * MINSECS;
-            $currentextensionseconds = $this->get_current_extension() * MINSECS;
-
             // Get and organize existing overrides.
             $overrides = $this->get_organized_overrides();
 
             // Get all students who can attempt the quiz.
             $enrolledusers = $this->get_gradeable_enrolled_users_with_capability('mod/quiz:attempt');
 
-            // Find existing examguard group for this quiz.
-            $examguardgroup = $this->find_examguard_group();
+            // Find existing examguard groups for this quiz.
+            $examguardgroups = $this->find_examguard_groups();
 
             // Process extensions for all users.
             $this->process_user_extensions(
                 $enrolledusers,
                 $overrides,
-                $examguardgroup,
-                $extensionseconds,
-                $currentextensionseconds,
+                $examguardgroups,
                 $extensionminutes
             );
 
@@ -121,7 +115,7 @@ class quiz extends examactivity {
      * @return int
      */
     public function get_exam_end_time(): int {
-        $currentextension = $this->get_current_extension();
+        $currentextension = $this->get_latest_extension();
         $extensionseconds = ($currentextension > 0) ? ($currentextension * MINSECS) : 0;
 
         return $this->activityinstance->timeclose + $extensionseconds + $this->timebuffer;
@@ -167,23 +161,68 @@ class quiz extends examactivity {
     }
 
     /**
+     * Get the effective settings for the quiz with the given user override and group overrides.
+     *
+     * @param \stdClass|null $useroverride User override
+     * @param array $groupoverrides Group overrides
+     *
+     * @return array
+     */
+    public function get_effective_settings(?\stdClass $useroverride, array $groupoverrides): array {
+        $data = [
+            'timeopen' => $this->activityinstance->timeopen,
+            'timeclose' => $this->activityinstance->timeclose,
+            'timelimit' => $this->activityinstance->timelimit,
+        ];
+
+        // Find the best settings from user override and group overrides, falling back to the quiz settings if not set.
+        foreach (['timeopen', 'timeclose', 'timelimit'] as $field) {
+            // Field is set in user override, use it.
+            if (!empty($useroverride->$field)) {
+                $data[$field] = $useroverride->$field;
+                continue;
+            }
+
+            // Field is not set in user override, use the best group override settings if any.
+            if (!empty($groupoverrides)) {
+                $best = $this->get_best_override_settings($groupoverrides);
+                if (!empty($best[$field])) {
+                    $data[$field] = $best[$field];
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    /**
      * Create a group override with extended time.
      *
      * @param int $groupid Group ID
+     * @param array $overridedata Override data
      * @param int $extensionseconds Extension in seconds
      * @return int|bool The ID of the created override
      */
-    protected function create_group_override(int $groupid, int $extensionseconds): int|bool {
+    protected function create_group_override(int $groupid, array $overridedata, int $extensionseconds): int|bool {
         $data = [
             'quiz' => $this->activityinstance->id,
             'groupid' => $groupid,
         ];
 
-        // Add extended time fields.
+        // Add extension to time fields.
         foreach (['timelimit', 'timeclose'] as $field) {
-            if ($this->activityinstance->$field > 0) {
-                $data[$field] = $this->activityinstance->$field + $extensionseconds;
+            if (empty($overridedata[$field])) {
+                continue;
             }
+            // As we are removing the existing exam guard group and creating a new one,
+            // so no need to check the current extension time.
+            $data[$field] = $overridedata[$field] + $extensionseconds;
+        }
+
+        // Match time limit to duration if it is not set or greater than the override group's quiz duration.
+        $duration = $data['timeclose'] - $overridedata['timeopen'];
+        if (empty($data['timelimit']) || $data['timelimit'] > $duration) {
+            $data['timelimit'] = $duration;
         }
 
         return $this->overridemanager->save_override($data);
@@ -196,22 +235,16 @@ class quiz extends examactivity {
      * @return array Best settings
      */
     private function get_best_override_settings(array $groupoverrides): array {
-        $best = [
-            'timelimit' => 0,
-            'timeclose' => 0,
-        ];
+        $best = ['timeopen' => 0, 'timeclose' => 0, 'timelimit' => 0];
 
         foreach ($groupoverrides as $override) {
-            // For timelimit and attempts, use the highest value.
-            foreach (['timelimit', 'attempts'] as $field) {
-                if (isset($override->$field) && $override->$field > $best[$field]) {
-                    $best[$field] = $override->$field;
-                }
-            }
+            // For timelimit and timeclose, use highest value.
+            $best['timelimit'] = max($best['timelimit'], $override->timelimit ?? 0);
+            $best['timeclose'] = max($best['timeclose'], $override->timeclose ?? 0);
 
-            // For timeclose, use the latest time.
-            if (isset($override->timeclose) && $override->timeclose > $best['timeclose']) {
-                $best['timeclose'] = $override->timeclose;
+            // For timeopen, use lowest non-zero value.
+            if (!empty($override->timeopen)) {
+                $best['timeopen'] = $best['timeopen'] ? min($best['timeopen'], $override->timeopen) : $override->timeopen;
             }
         }
 
@@ -223,190 +256,246 @@ class quiz extends examactivity {
      *
      * @param array $enrolledusers Array of enrolled users
      * @param array $overrides Organized overrides
-     * @param object|bool $examguardgroup Existing examguard group if any
-     * @param int $extensionseconds Extension in seconds
-     * @param int $currentextensionseconds Current extension in seconds
-     * @param int $minutes Extension in minutes
+     * @param array $existingexamguardgroups Existing exam guard groups if any
+     * @param int $extensionminutes Extension in minutes
      * @return void
      */
     private function process_user_extensions(
-        array       $enrolledusers,
-        array       $overrides,
-        object|bool $examguardgroup,
-        int         $extensionseconds,
-        int         $currentextensionseconds,
-        int         $minutes
+        array $enrolledusers,
+        array $overrides,
+        array $existingexamguardgroups,
+        int $extensionminutes
     ): void {
-        // Collect users without user overrides or group overrides.
-        $userswithoutuseroverride = [];
+        // Collect users for new exam guard groups.
+        $newexamguardgroups = [];
 
         // Process each enrolled user.
         foreach ($enrolledusers as $user) {
-            // Find user's group overrides excluding exam guard group.
+            // Get user's override groups.
             $usergroupoverrides = $this->get_user_group_overrides($user->id, $overrides['group']);
 
-            // Filter out examguard group override if it exists.
-            if ($examguardgroup) {
-                $usergroupoverrides = $this->filter_out_examguard_group($usergroupoverrides, $examguardgroup->id);
+            // Filter out all exam guard group overrides if existing.
+            if (!empty($existingexamguardgroups)) {
+                $usergroupoverrides = $this->filter_out_examguard_group($usergroupoverrides, $existingexamguardgroups);
             }
 
             if (isset($overrides['user'][$user->id])) {
-                // Case 1: User already has a user override - extend it.
+                // User has a user override - extend it.
+                // Get current extension for this user override if any.
+                $currentextension = $this->get_current_extension($this->coursemodule->id, $overrides['user'][$user->id]);
+
+                // Update user override.
                 $this->update_user_override_extension(
                     $overrides['user'][$user->id],
-                    $extensionseconds,
-                    $currentextensionseconds,
+                    $extensionminutes,
+                    $currentextension,
                     $usergroupoverrides
                 );
-            } else if (!empty($usergroupoverrides)) {
-                // Case 2: User is in non-examguard groups with overrides - create override based on best settings.
-                $this->create_user_extension_from_groups($user->id, $usergroupoverrides, $extensionseconds);
             } else {
-                // Case 3: User has no overrides or only exam guard group override - add to exam guard group.
-                $userswithoutuseroverride[] = $user;
+                // Handle user who has pre-existing override groups or without any override.
+                // Get the effective settings for this user (time open, time close and time limit).
+                $effectivesettings = $this->get_effective_settings(null, $usergroupoverrides);
+
+                // Put the user into a new exam guard group if the current time is within the effective time open and time close.
+                if ($effectivesettings['timeopen'] - $this->timebuffer <= $this->clock->time() &&
+                    $this->clock->time() <= $effectivesettings['timeclose']) {
+                    // Put the effective settings into a key, so all users with same effective settings will be grouped together.
+                    $key = $effectivesettings['timeopen'] . '_' .
+                        $effectivesettings['timeclose'] . '_' .
+                        $effectivesettings['timelimit'];
+                    $newexamguardgroups[$key][] = $user->id;
+                }
             }
         }
 
-        // Create or update exam guard group override for collected users.
-        if (!empty($userswithoutuseroverride)) {
-            $this->create_examguard_group_override(
-                $userswithoutuseroverride,
-                $minutes,
-                $extensionseconds,
-                $examguardgroup
-            );
-        }
-    }
-
-    /**
-     * Update a time field (timelimit or timeclose) in an override.
-     *
-     * @param array $data Override data to update
-     * @param \stdClass $override Original override object
-     * @param string $field Field name to update
-     * @param int $extensionseconds Extension in seconds
-     * @param int $currentextensionseconds Current extension in seconds
-     *
-     * @return bool Whether the field was changed
-     */
-    private function update_time_field(
-        array &$data,
-        \stdClass $override,
-        string $field,
-        int $extensionseconds,
-        int $currentextensionseconds
-    ): bool {
-        // If field is set in the override.
-        if (!empty($override->$field)) {
-            if ($currentextensionseconds > 0) {
-                // Remove the current extension and add the new one.
-                $data[$field] = $override->$field - $currentextensionseconds + $extensionseconds;
-            } else {
-                // Just add the new extension.
-                $data[$field] = $override->$field + $extensionseconds;
-            }
-        } else if (!empty($this->activityinstance->$field)) {
-            // If not set in override but set in quiz.
-            $data[$field] = $this->activityinstance->$field + $extensionseconds;
-
-            // At this point, there is no override setting for this field in user and group override.
-            if ($field === 'timelimit' && isset($data['timeclose'])) {
-                // Make sure the time limit is matching the new duration.
-                $data['timelimit'] = $data['timeclose'] - $this->get_exam_start_time();
-            }
-        }
-
-        return isset($data[$field]) && (!isset($override->$field) || $data[$field] != $override->$field);
+        // Create new exam guard group overrides.
+        $this->create_examguard_group_overrides($newexamguardgroups, $existingexamguardgroups, $extensionminutes);
     }
 
     /**
      * Update a user override with a new extension time.
      *
      * @param \stdClass $override The existing override object
-     * @param int $extensionseconds Number of seconds to extend by
-     * @param int $currentextensionseconds Current extension in seconds (if any)
+     * @param int $extensionminutes Extension in minutes
+     * @param bool|\stdClass $currentextension
      * @param array $groupoverrides Group overrides applicable to the user
-     * @return int|bool The ID of the updated override
+     * @return bool False if the override was not updated
      * @throws \invalid_parameter_exception
+     * @throws moodle_exception
      */
     private function update_user_override_extension(
         \stdClass $override,
-        int $extensionseconds,
-        int $currentextensionseconds = 0,
+        int $extensionminutes,
+        bool|\stdClass $currentextension,
         array $groupoverrides = []
-    ): int|bool {
-        $data = (array)$override;
-        $changed = false;
-
-        // Get the best settings from group overrides if available.
-        $best = !empty($groupoverrides) ? $this->get_best_override_settings($groupoverrides) : [];
-
-        // Process time fields.
-        foreach (['timeclose', 'timelimit'] as $field) {
-            if (empty($override->$field) && !empty($best[$field])) {
-                // If not set in user override but available in group overrides, use group value.
-                $data[$field] = $best[$field] + $extensionseconds;
-                $changed = true;
-            } else {
-                // Otherwise update normally if needed.
-                $changed |= $this->update_time_field($data, $override, $field, $extensionseconds, $currentextensionseconds);
+    ): bool {
+        if (!empty($currentextension)) {
+            if (empty($currentextension->ori_override_data)) {
+                throw new moodle_exception('error:original_user_override_data_empty', 'local_examguard');
             }
+            $currentextensionseconds = $currentextension->extensionminutes * MINSECS;
+            $originaloverridedata = $currentextension->ori_override_data;
+        } else {
+            $currentextensionseconds = 0;
+            $originaloverridedata = json_encode($override);
         }
 
-        // If the time close of the override is before the quiz's time close, skip update the user override.
-        if (isset($data['timeclose']) && $data['timeclose'] < $this->activityinstance->timeclose) {
+        if ($extensionminutes == 0) {
+            if (!empty($originaloverridedata)) {
+                $this->restore_user_override(json_decode($originaloverridedata));
+            }
             return false;
         }
 
-        // If nothing changed, return false.
+        // Convert minutes to seconds.
+        $extensionseconds = $extensionminutes * MINSECS;
+
+        // Find the user current settings.
+        $effectivesettings = $this->get_effective_settings($override, $groupoverrides);
+
+        // Skip if the current time is not within the student's quiz time window.
+        if (!($effectivesettings['timeopen'] - $this->timebuffer <= $this->clock->time() &&
+            $this->clock->time() <= $effectivesettings['timeclose'])) {
+            return false;
+        }
+
+        // Update time fields.
+        $changed = false;
+        $data = (array)$override;
+        foreach (['timeclose', 'timelimit'] as $field) {
+            // Skip if the field is not set in anywhere.
+            if (empty($effectivesettings[$field])) {
+                continue;
+            }
+
+            // Calculate the new value.
+            $data[$field] = $effectivesettings[$field] - $currentextensionseconds + $extensionseconds;
+
+            // Check if the field has changed.
+            if ($override->$field != $data[$field]) {
+                $changed = true;
+            }
+        }
+
+        // Match the time limit to the duration if it is not set or greater than user's quiz duration.
+        $duration = $data['timeclose'] - $effectivesettings['timeopen'];
+        if (empty($data['timelimit']) || $data['timelimit'] > $duration) {
+            $data['timelimit'] = $duration;
+        }
+
         if (!$changed) {
             return false;
         }
 
         // Save the updated override.
-        return $this->overridemanager->save_override($data);
+        if (!($overrideid = $this->overridemanager->save_override($data))) {
+            throw new moodle_exception('error:failed_to_save_override', 'local_examguard');
+        }
+
+        // Record the override in exam guard.
+        $this->record_exam_guard_override($this->coursemodule->id, $overrideid, $extensionminutes, $originaloverridedata);
+
+        return true;
     }
 
     /**
-     * Create a new user override with extended time based on multiple group overrides.
-     * Uses the most favorable settings from all applicable group overrides.
+     * Create new exam guard group overrides.
      *
-     * @param int $userid The user ID to create an override for
-     * @param array $groupoverrides Array of group override objects
-     * @param int $extensionseconds Number of seconds to extend by
-     * @return int|bool The ID of the created override
-     * @throws \invalid_parameter_exception
+     * @param array $newexamguardgroups Exam guard groups to be created
+     * @param array $existingexamguardgroups Existing exam guard groups
+     * @param int $extensionminutes Extension in minutes
+     * @return bool
+     * @throws moodle_exception
      */
-    protected function create_user_extension_from_groups(int $userid, array $groupoverrides, int $extensionseconds): int|bool {
-        $data = [
-            'quiz' => $this->activityinstance->id,
-            'userid' => $userid,
-        ];
+    protected function create_examguard_group_overrides(
+        array $newexamguardgroups,
+        array $existingexamguardgroups,
+        int $extensionminutes
+    ): bool {
+        // Delete active exam guard groups.
+        $this->delete_active_existing_examguard_groups($existingexamguardgroups);
 
-        // Get the best settings from group overrides.
-        $best = $this->get_best_override_settings($groupoverrides);
-
-        // Apply time extensions to time fields.
-        foreach (['timeclose', 'timelimit'] as $field) {
-            if ($best[$field] > 0) {
-                $data[$field] = $best[$field] + $extensionseconds;
-            } else if ($this->activityinstance->$field > 0) {
-                $data[$field] = $this->activityinstance->$field + $extensionseconds;
-
-                // At this point, there is no override setting for time limit in group override.
-                if ($field === 'timelimit' && isset($data['timeclose'])) {
-                    // Make sure the time limit is matching the new duration.
-                    $data['timelimit'] = $data['timeclose'] - $this->get_exam_start_time();
-                }
-            }
-        }
-
-        // If the time close of the override is before the quiz's time close, skip update the user override.
-        if (isset($data['timeclose']) && $data['timeclose'] < $this->activityinstance->timeclose) {
+        // Skip if no extension needed.
+        if ($extensionminutes === 0) {
             return false;
         }
 
-        // Save the new override.
-        return $this->overridemanager->save_override($data);
+        // Calculate starting group number.
+        $nextgroupnum = empty($this->find_examguard_groups())
+            ? 1
+            : $this->get_max_group_num($existingexamguardgroups) + 1;
+
+        // Create new exam guard groups.
+        foreach ($newexamguardgroups as $settingskey => $users) {
+            $timesettings = array_combine(
+                ['timeopen', 'timeclose', 'timelimit'],
+                array_map('intval', explode('_', $settingskey))
+            );
+
+            $overrideid = $this->create_examguard_group_override(
+                $users,
+                $timesettings,
+                $extensionminutes,
+                $nextgroupnum
+            );
+
+            if (!$overrideid) {
+                throw new moodle_exception('error:failed_to_save_override', 'local_examguard');
+            }
+
+            // Record the extension.
+            $this->record_exam_guard_override($this->coursemodule->id, $overrideid, $extensionminutes);
+            $nextgroupnum++;
+        }
+
+        return true;
+    }
+
+    /**
+     * Delete existing exam guard group and its overrides.
+     *
+     * @param array $existingexamguardgroups Existing examguard groups
+     * @return void
+     */
+    protected function delete_active_existing_examguard_groups(array $existingexamguardgroups): void {
+        if (empty($existingexamguardgroups)) {
+            return;
+        }
+
+        // Extract group ids.
+        $groupids = array_column($existingexamguardgroups, 'id');
+
+        // Get active overrides for exam guard groups.
+        $activeoverrides = array_filter(
+            $this->get_organized_overrides()['group'] ?? [],
+            fn($override): bool =>
+                in_array($override->groupid, $groupids) &&
+                $override->timeclose >= $this->clock->time()
+        );
+
+        // Delete active overrides and their groups.
+        foreach ($activeoverrides as $override) {
+            // Delete the override in quiz.
+            $this->overridemanager->delete_overrides([$override]);
+
+            // Delete the group in course.
+            groups_delete_group($override->groupid);
+
+            // Delete the override in exam guard.
+            $this->delete_examguard_overrides($override);
+        }
+    }
+
+    /**
+     * Restore user override if extension is zero.
+     *
+     * @param \stdClass $override
+     * @return void
+     * @throws \invalid_parameter_exception
+     */
+    protected function restore_user_override(\stdClass $override): void {
+        if ($this->overridemanager->save_override((array)$override)) {
+            $this->delete_examguard_overrides($override);
+        }
     }
 }

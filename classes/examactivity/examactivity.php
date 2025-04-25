@@ -51,6 +51,9 @@ abstract class examactivity {
     /** @var string Extension history table name */
     const EXTENSION_HISTORY_TABLE = 'local_examguard_extension_history';
 
+    /** @var string Exam guard overrides table name */
+    const EXAM_GUARD_OVERRIDES_TABLE = 'local_examguard_overrides';
+
     /**
      * Get the exam end time including buffer time.
      *
@@ -83,11 +86,34 @@ abstract class examactivity {
     /**
      * Create a group override with extended time.
      *
-     * @param int $groupid
-     * @param int $extensionseconds
+     * @param int $groupid Group ID
+     * @param array $overridedata Override data
+     * @param int $extensionseconds Extension in seconds
      * @return int|bool
      */
-    abstract protected function create_group_override(int $groupid, int $extensionseconds): int|bool;
+    abstract protected function create_group_override(int $groupid, array $overridedata, int $extensionseconds): int|bool;
+
+    /**
+     * Create new exam guard group overrides in activity.
+     *
+     * @param array $newexamguardgroups Exam guard groups to be created
+     * @param array $existingexamguardgroups Existing exam guard groups
+     * @param int $extensionminutes Extension in minutes
+     * @return bool
+     */
+    abstract protected function create_examguard_group_overrides(
+        array $newexamguardgroups,
+        array $existingexamguardgroups,
+        int $extensionminutes
+    ): bool;
+
+    /**
+     * Delete active exam guard groups in activity.
+     *
+     * @param array $existingexamguardgroups Existing exam guard groups
+     * @return void
+     */
+    abstract protected function delete_active_existing_examguard_groups(array $existingexamguardgroups): void;
 
     /**
      * Constructor.
@@ -119,7 +145,7 @@ abstract class examactivity {
      *
      * @return int The current extension in minutes, or 0 if none
      */
-    public function get_current_extension(): int {
+    public function get_latest_extension(): int {
         global $DB;
 
         $records = $DB->get_records(self::EXTENSION_HISTORY_TABLE,
@@ -139,13 +165,14 @@ abstract class examactivity {
     /**
      * Create a new examguard group in course.
      *
-     * @param int $minutes Number of minutes to extend
+     * @param int $extensionminutes Number of minutes to extend
+     * @param int $groupnum Suffix to group name
      * @return int|bool The ID of the created group
      */
-    protected function create_examguard_group(int $minutes): int|bool {
+    protected function create_examguard_group(int $extensionminutes, int $groupnum): int|bool {
         $groupdata = new \stdClass();
         $groupdata->courseid = $this->activityinstance->course;
-        $groupdata->name = "Exam_guard_activity_{$this->coursemodule->id}_extension_{$minutes}";
+        $groupdata->name = "Exam_guard_activity_{$this->coursemodule->id}_extension_{$extensionminutes}_group_{$groupnum}";
         $groupdata->visibility = GROUPS_VISIBILITY_OWN;
         $groupdata->timecreated = $this->clock->time();
         $groupdata->timemodified = $groupdata->timecreated;
@@ -154,86 +181,79 @@ abstract class examactivity {
     }
 
     /**
-     * Create a new examguard group override, deleting any existing one.
+     * Create a new exam guard group override.
      *
      * @param array $users Array of user objects
-     * @param int $minutes Number of minutes to extend
-     * @param int $extensionseconds Number of seconds to extend by
-     * @param object|bool $existinggroup Existing examguard group if any
+     * @param array $effectivesettings Current effective settings
+     * @param int $extensionminutes Number of minutes to extend
+     * @param int $groupnum Suffix to group name
+     *
      * @return int|bool The ID of the created group override
      */
     protected function create_examguard_group_override(
         array $users,
-        int $minutes,
-        int $extensionseconds,
-        object|bool $existinggroup): int|bool {
+        array $effectivesettings,
+        int $extensionminutes,
+        int $groupnum
+    ): int|bool {
         if (empty($users)) {
             return false;
         }
 
-        // Delete existing examguard group if it exists.
-        if ($existinggroup) {
-            $this->delete_existing_examguard_group($existinggroup);
-        }
-
-        // Do not create new exam guard group if the extension is 0.
-        if ($extensionseconds == 0) {
-            return false;
-        }
-
         // Create a new group.
-        $groupid = $this->create_examguard_group($minutes);
+        $groupid = $this->create_examguard_group($extensionminutes, $groupnum);
         if (!$groupid) {
             return false;
         }
 
         // Add users to the group.
-        foreach ($users as $user) {
-            groups_add_member($groupid, $user->id);
+        foreach ($users as $userid) {
+            groups_add_member($groupid, $userid);
         }
 
-        // Create and save the group override.
-        return $this->create_group_override($groupid, $extensionseconds);
+        // Create and save the group override for the activity.
+        return $this->create_group_override($groupid, $effectivesettings, $extensionminutes * MINSECS);
     }
 
     /**
-     * Delete existing examguard group and its overrides.
+     * Delete existing exam guard override record.
      *
-     * @param object $existinggroup Existing examguard group
-     * @return void
+     * @param \stdClass $override
+     * @return bool
      */
-    protected function delete_existing_examguard_group(object $existinggroup): void {
-        // Delete any overrides for this group.
-        foreach ($this->get_organized_overrides()['group'] as $override) {
-            if ($override->groupid == $existinggroup->id) {
-                $this->overridemanager->delete_overrides([$override]);
-                break;
-            }
-        }
-
-        // Delete the group.
-        groups_delete_group($existinggroup->id);
+    protected function delete_examguard_overrides(\stdClass $override): bool {
+        global $DB;
+        return $DB->delete_records(
+            self::EXAM_GUARD_OVERRIDES_TABLE,
+            ['cmid' => $this->coursemodule->id, 'overrideid' => $override->id]
+        );
     }
 
     /**
      * Filter out examguard group from user group overrides.
      *
      * @param array $usergroupoverrides Array of group overrides
-     * @param int $examguardgroupid Examguard group ID
+     * @param array $examguardgroups Examguard groups
      * @return array Filtered group overrides
      */
-    protected function filter_out_examguard_group(array $usergroupoverrides, int $examguardgroupid): array {
-        return array_filter($usergroupoverrides, function($override) use ($examguardgroupid) {
-            return $override->groupid != $examguardgroupid;
-        });
+    protected function filter_out_examguard_group(array $usergroupoverrides, array $examguardgroups): array {
+        $result = [];
+        $groupids = array_column($examguardgroups, 'id');
+        foreach ($usergroupoverrides as $usergroupoverride) {
+            if (in_array($usergroupoverride->groupid, $groupids)) {
+                continue;
+            }
+            $result[] = $usergroupoverride;
+        }
+        return $result;
     }
 
     /**
-     * Find exam guard group for this specific activity.
+     * Find exam guard groups for this specific activity.
      *
-     * @return object|false Group object or false if not found
+     * @return array
      */
-    protected function find_examguard_group() {
+    protected function find_examguard_groups(): array {
         global $DB;
 
         $courseid = $this->activityinstance->course;
@@ -249,13 +269,7 @@ abstract class examactivity {
             'prefix' => "Exam_guard_activity_{$cmid}_extension_%",
         ];
 
-        $groups = $DB->get_records_sql($sql, $params);
-
-        if (count($groups) > 1) {
-            throw new \moodle_exception('error:multiple_exam_guard_groups_found', 'local_examguard');
-        }
-
-        return reset($groups) ?: false;
+        return $DB->get_records_sql($sql, $params);
     }
 
     /**
@@ -356,5 +370,69 @@ abstract class examactivity {
         $record->usermodified = $USER->id;
 
         $DB->insert_record(self::EXTENSION_HISTORY_TABLE, $record);
+    }
+
+    /**
+     * Get the current extension for an override in minutes
+     *
+     * @param int $cmid The course module ID
+     * @param \stdClass $override The override
+     * @return false|\stdClass False if not found, otherwise the current extension record object
+     */
+    protected function get_current_extension(int $cmid, \stdClass $override): false|\stdClass {
+        global $DB;
+        return $DB->get_record(self::EXAM_GUARD_OVERRIDES_TABLE, ['cmid' => $cmid, 'overrideid' => $override->id]);
+    }
+
+    /**
+     * Record an override in the exam guard overrides table
+     *
+     * @param int $cmid The course module ID
+     * @param int $overrideid The override ID
+     * @param int $extensionminutes The extension in minutes
+     * @param string|null $originaloverridedata The original user override data
+     *
+     * @return bool|int True or the new ID of the record
+     */
+    protected function record_exam_guard_override(
+        int $cmid,
+        int $overrideid,
+        int $extensionminutes,
+        ?string $originaloverridedata = null
+    ): bool|int {
+        global $DB, $USER;
+
+        $record = (object)[
+            'cmid' => $cmid,
+            'overrideid' => $overrideid,
+            'extensionminutes' => $extensionminutes,
+            'ori_override_data' => $originaloverridedata,
+            'usermodified' => $USER->id,
+            'timemodified' => $this->clock->time(),
+        ];
+
+        if ($existing = $DB->get_record(self::EXAM_GUARD_OVERRIDES_TABLE, ['cmid' => $cmid, 'overrideid' => $overrideid])) {
+            $record->id = $existing->id;
+            return $DB->update_record(self::EXAM_GUARD_OVERRIDES_TABLE, $record);
+        }
+
+        return $DB->insert_record(self::EXAM_GUARD_OVERRIDES_TABLE, $record);
+    }
+
+    /**
+     * Get the maximum number from the examguard group name.
+     *
+     * @param array $existingexamguardgroups Exam guard groups
+     * @return int The maximum number
+     */
+    protected function get_max_group_num(array $existingexamguardgroups): int {
+        $maxgroupnum = 0;
+        foreach ($existingexamguardgroups as $group) {
+            if (preg_match('/group_(\d+)/', $group->name, $match)) {
+                $maxgroupnum = max($maxgroupnum, (int) $match[1]);
+            }
+        }
+
+        return $maxgroupnum;
     }
 }

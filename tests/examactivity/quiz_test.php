@@ -18,7 +18,7 @@
  * Unit tests for quiz exam activity class.
  *
  * @package    local_examguard
- * @copyright  2024 onwards University College London {@link https://www.ucl.ac.uk/}
+ * @copyright  2025 onwards University College London {@link https://www.ucl.ac.uk/}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @author     Alex Yeung <k.yeung@ucl.ac.uk>
  */
@@ -27,6 +27,7 @@ namespace local_examguard;
 
 use core\clock;
 use core\context\module;
+use local_examguard\examactivity\examactivity;
 use local_examguard\examactivity\examactivityfactory;
 use local_examguard\examactivity\quiz;
 use mod_quiz\local\override_manager;
@@ -95,7 +96,7 @@ final class quiz_test extends advanced_testcase {
         $this->resetAfterTest();
 
         // Mock the clock.
-        $this->clock = $this->mock_clock_with_frozen(1744099200); // Current time 2025-04-08 09:00:00.
+        $this->clock = $this->mock_clock_with_frozen(strtotime('2025-04-08 09:05:00')); // Current time 2025-04-08 09:05:00.
 
         // Set buffer config.
         set_config('timebuffer', 10, 'local_examguard'); // 10 minutes.
@@ -134,8 +135,8 @@ final class quiz_test extends advanced_testcase {
         $this->quiz = $this->getDataGenerator()->create_module('quiz',
             [
                 'course' => $this->course->id,
-                'timeopen' => $this->clock->time(),
-                'timeclose' => $this->clock->time() + HOURSECS * 3, // 3 hour duration.
+                'timeopen' => strtotime('2025-04-08 09:00:00'),
+                'timeclose' => strtotime('2025-04-08 12:00:00'), // 3 hour duration.
                 'timelimit' => HOURSECS * 3,
             ]
         );
@@ -308,10 +309,11 @@ final class quiz_test extends advanced_testcase {
         $extension = 15;
         $this->quizactivity->apply_extension($extension);
 
-        // Verify extensions for student 1 (no original timelimit).
+        // Verify extensions for student 1 (no original timelimit), then student 1's time limit will be the quiz's time limit.
+        // Therefore, time limit extension will be the quiz's time limit + extension(15 minutes).
         $updatedoverride = $DB->get_record('quiz_overrides', ['id' => $overrideids[0]]);
         $this->assertEquals($overrides[0]['timeclose'] + (MINSECS * $extension), $updatedoverride->timeclose);
-        $this->assertEquals($this->quiz->timelimit + (MINSECS * 30) + (MINSECS * $extension), $updatedoverride->timelimit);
+        $this->assertEquals($this->quiz->timelimit + (MINSECS * $extension), $updatedoverride->timelimit);
 
         // Verify extensions for student 2 (with original timelimit).
         $updatedoverride = $DB->get_record('quiz_overrides', ['id' => $overrideids[1]]);
@@ -357,33 +359,43 @@ final class quiz_test extends advanced_testcase {
         $extension = 15;
         $this->quizactivity->apply_extension($extension);
 
+        // Find all exam guard override groups.
+        $examguardoverrides = $this->find_examguard_groups($this->quizactivity);
+
         // Test cases for different student scenarios.
         $expectedoverrides = [
-            // Student 1 (in both groups) should get best override (group 2).
-            $this->students[1]->id => [
-                'timeclose' => $overrides[1]['timeclose'] + (MINSECS * $extension),
-                'timelimit' => $overrides[1]['timelimit'] + (MINSECS * $extension),
+            // Student 5 with no overrides.
+            [
+                'userids' => [$this->students[5]->id],
+                'timeclose' => $this->quiz->timeclose + (MINSECS * $extension),
+                'timelimit' => $this->quiz->timelimit + (MINSECS * $extension),
             ],
-            // Student 2 (group 1 only).
-            $this->students[2]->id => [
+            // Student 2.
+            [
+                'userids' => [$this->students[2]->id],
                 'timeclose' => $overrides[0]['timeclose'] + (MINSECS * $extension),
                 'timelimit' => $overrides[0]['timelimit'] + (MINSECS * $extension),
             ],
-            // Students 3 and 4 (group 2 only).
-            $this->students[3]->id => [
-                'timeclose' => $overrides[1]['timeclose'] + (MINSECS * $extension),
-                'timelimit' => $overrides[1]['timelimit'] + (MINSECS * $extension),
-            ],
-            $this->students[4]->id => [
+            // Students 1, 3 and 4.
+            [
+                'userids' => [$this->students[1]->id, $this->students[3]->id, $this->students[4]->id],
                 'timeclose' => $overrides[1]['timeclose'] + (MINSECS * $extension),
                 'timelimit' => $overrides[1]['timelimit'] + (MINSECS * $extension),
             ],
         ];
 
-        foreach ($expectedoverrides as $userid => $expected) {
-            $override = $DB->get_record('quiz_overrides', ['quiz' => $this->quiz->id, 'userid' => $userid]);
-            $this->assertEquals($expected['timeclose'], $override->timeclose);
-            $this->assertEquals($expected['timelimit'], $override->timelimit);
+        // Verify correct exam guard override groups are created.
+        $this->assertEquals(3, count($examguardoverrides));
+        $i = 0;
+        foreach ($examguardoverrides as $examguardoverride) {
+            // Verify students are in the correct groups.
+            $userids = array_keys(groups_get_members($examguardoverride->groupid));
+            foreach ($expectedoverrides[$i]['userids'] as $userid) {
+                $this->assertTrue(in_array($userid, $userids));
+            }
+            $this->assertEquals($expectedoverrides[$i]['timeclose'], $examguardoverride->timeclose);
+            $this->assertEquals($expectedoverrides[$i]['timelimit'], $examguardoverride->timelimit);
+            $i++;
         }
     }
 
@@ -425,53 +437,114 @@ final class quiz_test extends advanced_testcase {
         $updatedoverride = $DB->get_record('quiz_overrides', ['quiz' => $this->quiz->id, 'userid' => $this->students[1]->id]);
         $this->assertEquals($overrides['user']['timeclose'] + (MINSECS * $extension), $updatedoverride->timeclose);
         $this->assertEquals($overrides['user']['timelimit'] + (MINSECS * $extension), $updatedoverride->timelimit);
+
+        // Update the extension time.
+        $extension = 30;
+        $this->quizactivity->apply_extension($extension);
+
+        // Verify the user override is updated.
+        $updatedoverride = $DB->get_record('quiz_overrides', ['quiz' => $this->quiz->id, 'userid' => $this->students[1]->id]);
+        $this->assertEquals($overrides['user']['timeclose'] + (MINSECS * $extension), $updatedoverride->timeclose);
+        $this->assertEquals($overrides['user']['timelimit'] + (MINSECS * $extension), $updatedoverride->timelimit);
     }
 
     /**
-     * Test student with no existing overrides.
+     * Test multiple override groups slots, e.g. 2 override groups with different exam time slots within the same quiz.
      *
      * @covers ::apply_extension
-     * @covers ::create_group_override
      * @covers ::get_current_extension
      */
-    public function test_student_with_no_override(): void {
-        global $DB;
+    public function test_multiple_override_groups_slots(): void {
+        // Unenroll student 5, so that all students are in an override group.
+        // Student 1 and 2 are in the first override group, student 3 and 4 are in the second override group.
+        $this->unenroll_user($this->students[5]->id);
 
-        // Create some group overrides to ensure they don't affect the test.
+        $quiz = $this->get_quiz_examactivity(strtotime('2025-04-08 09:00:00'), strtotime('2025-04-08 12:30:00'), 0);
         $overrides = [
             [
-                'quiz' => $this->quiz->id,
+                'quiz' => $quiz->activityinstance->id,
                 'groupid' => $this->groups[1]->id,
-                'timeclose' => $this->quiz->timeclose + MINSECS * 15,
-                'timelimit' => $this->quiz->timelimit + MINSECS * 15,
+                'timeclose' => strtotime('2025-04-08 10:30:00'),
             ],
             [
-                'quiz' => $this->quiz->id,
+                'quiz' => $quiz->activityinstance->id,
                 'groupid' => $this->groups[2]->id,
-                'timeclose' => $this->quiz->timeclose + MINSECS * 30,
-                'timelimit' => $this->quiz->timelimit + MINSECS * 30,
+                'timeopen' => strtotime('2025-04-08 11:00:00'),
             ],
         ];
 
+        // Save overrides.
+        $overridemanager = new override_manager(
+            $quiz->activityinstance,
+            \context_module::instance($quiz->coursemodule->id)
+        );
         foreach ($overrides as $override) {
-            $this->overridemanager->save_override($override);
+            $overridemanager->save_override($override);
         }
 
         // Apply extension as teacher.
         $this->setUser($this->teacher);
         $extension = 15;
-        $this->quizactivity->apply_extension($extension);
+        $quiz->apply_extension($extension);
 
-        // Verify exam guard group was created and override applied.
-        $examguardgroupid = groups_get_group_by_name(
-            $this->course->id,
-            "Exam_guard_activity_{$this->cm->id}_extension_{$extension}"
-        );
-        $this->assertNotEmpty($examguardgroupid);
+        // Find all exam guard override groups.
+        $examguardoverrides = $this->find_examguard_groups($quiz);
 
-        $examguardgroupoverride = $DB->get_record('quiz_overrides', ['quiz' => $this->quiz->id, 'groupid' => $examguardgroupid]);
-        $this->assertNotEmpty($examguardgroupoverride);
-        $this->assertEquals($this->quiz->timeclose + (MINSECS * $extension), $examguardgroupoverride->timeclose);
-        $this->assertEquals($this->quiz->timelimit + (MINSECS * $extension), $examguardgroupoverride->timelimit);
+        // Verify correct exam guard override groups are created.
+        // One exam guard group should be created because current time (09:05) is between 09:00 and 10:30.
+        $this->assertEquals(1, count($examguardoverrides));
+
+        // Verify correct time close and time limit.
+        $firstgroup = reset($examguardoverrides);
+        $this->assertEquals($overrides[0]['timeclose'] + (MINSECS * $extension), $firstgroup->timeclose);
+        $this->assertEquals(6300, $firstgroup->timelimit); // 1 hour 45 minutes.
+
+        // Verify only student 1 and 2 are in the exam guard group.
+        $members = groups_get_members($firstgroup->groupid);
+        $this->assertArrayHasKey($this->students[1]->id, $members);
+        $this->assertArrayHasKey($this->students[2]->id, $members);
+
+        // Verify student 3 and 4 are not in the exam guard group.
+        $this->assertArrayNotHasKey($this->students[3]->id, $members);
+        $this->assertArrayNotHasKey($this->students[4]->id, $members);
+    }
+
+    /**
+     * Find all exam guard override groups.
+     *
+     * @param examactivity $quiz
+     * @return array
+     */
+    private function find_examguard_groups(examactivity $quiz): array {
+        global $DB;
+
+        // Find all exam guard override groups.
+        $sql = "SELECT qo.id, qo.timeclose, qo.timelimit, qo.groupid, g.name
+                FROM {quiz_overrides} qo
+                JOIN {groups} g ON qo.groupid = g.id
+                WHERE quiz = :quiz and " . $DB->sql_like('g.name', ':prefix') . "
+                ORDER BY qo.timeclose ASC";
+
+        return $DB->get_records_sql($sql, [
+            'quiz' => $quiz->activityinstance->id,
+            'prefix' => "Exam_guard_activity_{$quiz->coursemodule->id}_extension_%",
+        ]);
+    }
+
+    /**
+     * Unenroll a user from the course.
+     *
+     * @param int $userid
+     * @return void
+     */
+    private function unenroll_user(int $userid): void {
+        $enrolinstances = enrol_get_instances($this->course->id, false);
+        foreach ($enrolinstances as $instance) {
+            if ($instance->enrol == 'manual') {
+                $enrolplugin = enrol_get_plugin($instance->enrol);
+                $enrolplugin->unenrol_user($instance, $userid);
+                break;
+            }
+        }
     }
 }
