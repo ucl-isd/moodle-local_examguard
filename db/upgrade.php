@@ -62,5 +62,38 @@ function xmldb_local_examguard_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025040900, 'local', 'examguard');
     }
 
+    if ($oldversion < 2025042500) {
+
+        // Define table local_examguard_overrides to be created.
+        $table = new xmldb_table('local_examguard_overrides');
+
+        // Adding fields to table local_examguard_overrides.
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('overrideid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('extensionminutes', XMLDB_TYPE_INTEGER, '5', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('ori_override_data', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('usermodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+
+        // Adding keys to table local_examguard_overrides.
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        // Adding indexes to table local_examguard_overrides.
+        $table->add_index('idx_cmid', XMLDB_INDEX_NOTUNIQUE, ['cmid']);
+        $table->add_index('idx_overrideid', XMLDB_INDEX_NOTUNIQUE, ['overrideid']);
+        $table->add_index('idx_usermodified', XMLDB_INDEX_NOTUNIQUE, ['usermodified']);
+        $table->add_index('idx_cmid_overrideid', XMLDB_INDEX_NOTUNIQUE, ['cmid', 'overrideid']);
+        $table->add_index('idx_timemodified', XMLDB_INDEX_NOTUNIQUE, ['timemodified']);
+
+        // Conditionally launch create table for local_examguard_overrides.
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // Examguard savepoint reached.
+        upgrade_plugin_savepoint(true, 2025042500, 'local', 'examguard');
+    }
+
     return true;
 }

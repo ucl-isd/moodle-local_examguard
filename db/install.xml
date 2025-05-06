@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/examguard/db" VERSION="20250409" COMMENT="XMLDB file for Moodle local/examguard"
+<XMLDB PATH="local/examguard/db" VERSION="20250425" COMMENT="XMLDB file for Moodle local/examguard"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -30,6 +30,27 @@
         <INDEX NAME="idx_cmid" UNIQUE="false" FIELDS="cmid"/>
         <INDEX NAME="idx_usermodified" UNIQUE="false" FIELDS="usermodified"/>
         <INDEX NAME="idx_timecreated" UNIQUE="false" FIELDS="timecreated"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_examguard_overrides" COMMENT="To store the overrides created or updated by exam guard">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="overrideid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="extensionminutes" TYPE="int" LENGTH="5" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="ori_override_data" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Store the original override data"/>
+        <FIELD NAME="usermodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_cmid" UNIQUE="false" FIELDS="cmid"/>
+        <INDEX NAME="idx_overrideid" UNIQUE="false" FIELDS="overrideid"/>
+        <INDEX NAME="idx_usermodified" UNIQUE="false" FIELDS="usermodified"/>
+        <INDEX NAME="idx_cmid_overrideid" UNIQUE="false" FIELDS="cmid, overrideid"/>
+        <INDEX NAME="idx_timemodified" UNIQUE="false" FIELDS="timemodified"/>
       </INDEXES>
     </TABLE>
   </TABLES>
