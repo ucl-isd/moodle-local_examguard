@@ -121,6 +121,9 @@ abstract class examactivity {
      * @param int $cmid The course module id.
      */
     public function __construct(int $cmid) {
+        global $CFG;
+        require_once($CFG->dirroot.'/group/lib.php');
+
         [$cm, $module] = manager::get_module_from_cmid($cmid);
 
         // Set activity instance.

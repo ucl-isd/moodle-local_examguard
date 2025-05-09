@@ -23,6 +23,7 @@
  * @author     Alex Yeung <k.yeung@ucl.ac.uk>
  */
 
+use core\output\notification;
 use local_examguard\examactivity\examactivityfactory;
 
 require_once('../../config.php');
@@ -52,34 +53,35 @@ $PAGE->activityheader->disable();
 $returnurl = new moodle_url('/mod/' . $cm->modname . '/view.php', ['id' => $cmid]);
 $mform = new \local_examguard\extend_time_form($PAGE->url);
 
-echo $OUTPUT->header();
-
 // Get the exam activity.
 $examactivity = examactivityfactory::get_exam_activity($cm->id, $cm->modname);
 
+$showform = true;
+
 if (get_config('local_examguard', 'bulkextension') !== '1') {
     \core\notification::error(get_string('error:bulk_extension_not_enabled', 'local_examguard'));
+    $showform = false;
 } else if (!$examactivity->is_active_exam_activity()) {
-    // Do not allow extends time for non-active exam activities.
     \core\notification::error(get_string('error:not_active_exam_activity', 'local_examguard'));
+    $showform = false;
 } else {
     $currentextension = $examactivity->get_latest_extension();
-
-    // A time extension is set, load it into the form field.
     if ($currentextension > 0) {
         $mform->set_data(['extendtime' => $currentextension]);
     }
 
-    // Handle form submission.
     if ($mform->is_cancelled()) {
         redirect($returnurl);
     } else if ($fromform = $mform->get_data()) {
-        // Verify sesskey for security.
         require_sesskey();
         $examactivity->apply_extension($fromform->extendtime);
-        $mform->set_data(['extendtime' => $examactivity->get_latest_extension()]);
-        \core\notification::success(get_string('notification:update_success', 'local_examguard'));
+        \core\notification::add(get_string('notification:update_success', 'local_examguard'), notification::NOTIFY_SUCCESS);
+        redirect($returnurl);
     }
+}
+
+echo $OUTPUT->header();
+if ($showform) {
     $mform->display();
 }
 echo $OUTPUT->footer();

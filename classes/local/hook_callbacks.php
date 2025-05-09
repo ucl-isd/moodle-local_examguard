@@ -46,8 +46,8 @@ class hook_callbacks {
                 // Exam guard is enabled.
                 if (get_config('local_examguard', 'enabled')) {
 
-                    // Do nothing if the current user is not an editing role, e.g. student.
-                    if (!manager::user_has_an_editing_role($PAGE->course->id, $USER->id)) {
+                    // Do nothing if the current user is not a site admin and does not have an editing role, e.g. student.
+                    if (!manager::user_has_an_editing_role($PAGE->course->id, $USER->id) && !is_siteadmin($USER->id)) {
                         return;
                     }
 
