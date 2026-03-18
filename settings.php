@@ -31,7 +31,8 @@ if ($hassiteconfig) {
 
     if ($ADMIN->fulltree) {
         // General settings.
-        $settingspage->add(new admin_setting_heading('local_examguard_general_settings',
+        $settingspage->add(new admin_setting_heading(
+            'local_examguard_general_settings',
             get_string('settings:generalsettingsheader', 'local_examguard'),
             ''
         ));

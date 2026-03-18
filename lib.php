@@ -34,16 +34,54 @@ use local_examguard\manager;
  * @return string[]|void
  */
 function local_examguard_coursemodule_validation($fromform, $fields) {
+    // Skip if exam guard is not enabled.
+    if (!get_config('local_examguard', 'enabled')) {
+        return;
+    }
+
     try {
-        // Exam Guard is enabled.
-        if (get_config('local_examguard', 'enabled')) {
-            // Prevent change to activity if the course is in exam mode and the user is not a site admin.
-            if (!has_capability('moodle/site:config', context_system::instance()) &&
-                manager::should_prevent_course_editing($fields['course'])) {
-                // Return an error message to prevent saving changes, but the user will not see it.
-                return ['examguard' => get_string('error:course_editing_banned', 'local_examguard')];
-            }
+        // Prevent change to activity if the course is in exam mode and the user is not a site admin.
+        if (
+            !has_capability('moodle/site:config', context_system::instance()) &&
+            manager::should_prevent_course_editing($fields['course'])
+        ) {
+            return ['examguard' => get_string('error:course_editing_banned', 'local_examguard')];
         }
+    } catch (Exception $e) {
+        // Show error message when exception is caught.
+        notification::add($e->getMessage(), notification::ERROR);
+    }
+}
+
+/**
+ * Add AMD module to the module edit form for real-time warnings.
+ *
+ * @param moodleform_mod $formwrapper
+ * @param MoodleQuickForm $mform
+ */
+function local_examguard_coursemodule_standard_elements($formwrapper, $mform) {
+    global $PAGE;
+
+    // Skip if exam guard is not enabled.
+    if (!get_config('local_examguard', 'enabled')) {
+        return;
+    }
+
+    try {
+        // Only apply to exam guard supported activities.
+        $modulename = $formwrapper->get_current()->modulename ?? '';
+        if (!manager::is_exam_guard_supported_activity($modulename)) {
+            return;
+        }
+
+        $classname = 'local_examguard\\examactivity\\' . $modulename;
+        $examduration = (int) get_config('local_examguard', 'examduration') * MINSECS;
+
+        $PAGE->requires->js_call_amd('local_examguard/mod_form_warnings', 'init', [[
+            'startfieldname' => $classname::get_start_time_field_name(),
+            'endfieldname' => $classname::get_end_time_field_name(),
+            'examduration' => $examduration,
+        ]]);
     } catch (Exception $e) {
         // Show error message when exception is caught.
         notification::add($e->getMessage(), notification::ERROR);
@@ -57,13 +95,15 @@ function local_examguard_coursemodule_validation($fromform, $fields) {
  * @param stdClass $course
  */
 function local_examguard_coursemodule_edit_post_actions($data, $course) {
+    // Skip if exam guard is not enabled.
+    if (!get_config('local_examguard', 'enabled')) {
+        return $data;
+    }
+
     try {
-        // Exam Guard is enabled.
-        if (get_config('local_examguard', 'enabled')) {
-            // Execute Exam Guard actions if the module is an exam activity.
-            if (manager::is_exam_guard_supported_activity($data->modulename)) {
-                manager::check_course_exam_status($course->id);
-            }
+        // Execute Exam Guard actions if the module is an exam activity.
+        if (manager::is_exam_guard_supported_activity($data->modulename)) {
+            manager::check_course_exam_status($course->id);
         }
     } catch (Exception $e) {
         // Show error message when exception is caught.

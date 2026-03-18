@@ -297,8 +297,10 @@ class quiz extends examactivity {
                 $effectivesettings = $this->get_effective_settings(null, $usergroupoverrides);
 
                 // Put the user into a new exam guard group if the current time is within the effective time open and time close.
-                if ($effectivesettings['timeopen'] - $this->timebuffer <= $this->clock->time() &&
-                    $this->clock->time() <= $effectivesettings['timeclose']) {
+                if (
+                    $effectivesettings['timeopen'] - $this->timebuffer <= $this->clock->time() &&
+                    $this->clock->time() <= $effectivesettings['timeclose']
+                ) {
                     // Put the effective settings into a key, so all users with same effective settings will be grouped together.
                     $key = $effectivesettings['timeopen'] . '_' .
                         $effectivesettings['timeclose'] . '_' .
@@ -354,8 +356,10 @@ class quiz extends examactivity {
         $effectivesettings = $this->get_effective_settings($override, $groupoverrides);
 
         // Skip if the current time is not within the student's quiz time window.
-        if (!($effectivesettings['timeopen'] - $this->timebuffer <= $this->clock->time() &&
-            $this->clock->time() <= $effectivesettings['timeclose'])) {
+        if (
+            !($effectivesettings['timeopen'] - $this->timebuffer <= $this->clock->time() &&
+            $this->clock->time() <= $effectivesettings['timeclose'])
+        ) {
             return false;
         }
 
@@ -497,5 +501,23 @@ class quiz extends examactivity {
         if ($this->overridemanager->save_override((array)$override)) {
             $this->delete_examguard_overrides($override);
         }
+    }
+
+    /**
+     * Get the field name for quiz open time.
+     *
+     * @return string
+     */
+    public static function get_start_time_field_name(): string {
+        return 'timeopen';
+    }
+
+    /**
+     * Get the field name for quiz close time.
+     *
+     * @return string
+     */
+    public static function get_end_time_field_name(): string {
+        return 'timeclose';
     }
 }

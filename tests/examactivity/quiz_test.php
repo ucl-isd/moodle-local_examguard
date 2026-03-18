@@ -43,7 +43,6 @@ use stdClass;
  * @coversDefaultClass \local_examguard\examactivity\quiz
  */
 final class quiz_test extends advanced_testcase {
-
     /**
      * @var stdClass The course object.
      */
@@ -132,7 +131,8 @@ final class quiz_test extends advanced_testcase {
         groups_add_member($this->groups[2], $this->students[4]);
 
         // Create a quiz.
-        $this->quiz = $this->getDataGenerator()->create_module('quiz',
+        $this->quiz = $this->getDataGenerator()->create_module(
+            'quiz',
             [
                 'course' => $this->course->id,
                 'timeopen' => strtotime('2025-04-08 09:00:00'),
@@ -158,7 +158,8 @@ final class quiz_test extends advanced_testcase {
      * @throws \moodle_exception
      */
     private function get_quiz_examactivity(int $timeopen, int $timeclose, int $timelimit): quiz {
-        $quiz = $this->getDataGenerator()->create_module('quiz',
+        $quiz = $this->getDataGenerator()->create_module(
+            'quiz',
             [
                 'course' => $this->course->id,
                 'timeopen' => $timeopen,

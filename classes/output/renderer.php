@@ -30,7 +30,6 @@ use plugin_renderer_base;
  * @author     Alex Yeung <k.yeung@ucl.ac.uk>
  */
 class renderer extends plugin_renderer_base {
-
     /**
      * Render notification banner.
      *
@@ -51,7 +50,8 @@ class renderer extends plugin_renderer_base {
      * @return string
      */
     public function render_extend_time_button(): string {
-        if (preg_match('/mod-(.+?)-view/', $this->page->pagetype) &&
+        if (
+            preg_match('/mod-(.+?)-view/', $this->page->pagetype) &&
             manager::is_exam_guard_supported_activity($this->page->cm->modname) &&
             get_config('local_examguard', 'bulkextension')
         ) {

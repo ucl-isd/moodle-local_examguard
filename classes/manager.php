@@ -18,6 +18,8 @@ namespace local_examguard;
 
 use cache;
 use context_course;
+use core\clock;
+use core\di;
 use core\notification;
 use local_examguard\examactivity\examactivityfactory;
 
@@ -122,7 +124,7 @@ class manager {
             return $rolesids;
         }
 
-        list($insql, $params) = $DB->get_in_or_equal(['editingteacher', 'manager']);
+        [$insql, $params] = $DB->get_in_or_equal(['editingteacher', 'manager']);
         $sql = "SELECT r.* FROM {role} r WHERE r.archetype $insql";
 
         if ($roles = $DB->get_records_sql($sql, $params)) {
@@ -306,5 +308,27 @@ class manager {
         $module = $DB->get_record($cm->modname, ['id' => $cm->instance], '*', MUST_EXIST);
         $module->cmid = $cm->id;
         return [$cm, $module];
+    }
+
+    /**
+     * Get course module IDs of future exam activities.
+     *
+     * @param \stdClass $course The course object.
+     * @return array Array of cmid integers.
+     */
+    public static function get_future_examactivity_cmids(\stdClass $course): array {
+        $cmids = [];
+
+        foreach (self::EXAM_ACTIVITIES as $activityname) {
+            $instances = get_all_instances_in_course($activityname, $course);
+            foreach ($instances as $instance) {
+                $examactivity = examactivityfactory::get_exam_activity($instance->coursemodule, $activityname);
+                if ($examactivity->is_exam_activity() && $examactivity->get_exam_end_time() > di::get(clock::class)->time()) {
+                    $cmids[] = (int) $instance->coursemodule;
+                }
+            }
+        }
+
+        return $cmids;
     }
 }

@@ -76,6 +76,20 @@ abstract class examactivity {
     abstract public function is_exam_activity(): bool;
 
     /**
+     * Get the field name used for the activity start time.
+     *
+     * @return string
+     */
+    abstract public static function get_start_time_field_name(): string;
+
+    /**
+     * Get the field name used for the activity end time.
+     *
+     * @return string
+     */
+    abstract public static function get_end_time_field_name(): string;
+
+    /**
      * Apply time extension.
      *
      * @param int $extensionminutes Number of minutes to extend
@@ -148,11 +162,14 @@ abstract class examactivity {
     public function get_latest_extension(): int {
         global $DB;
 
-        $records = $DB->get_records(self::EXTENSION_HISTORY_TABLE,
+        $records = $DB->get_records(
+            self::EXTENSION_HISTORY_TABLE,
             ['cmid' => $this->coursemodule->id],
             'timecreated DESC',
             '*',
-            0, 1);
+            0,
+            1
+        );
 
         if (!empty($records)) {
             $record = reset($records);
@@ -282,7 +299,7 @@ abstract class examactivity {
         $enrolledusers = get_enrolled_users($this->context, $capability);
         // Filter out non-gradeable users e.g. teachers.
         $gradeableids = self::get_gradeable_user_ids();
-        return array_filter($enrolledusers, function($u) use ($gradeableids) {
+        return array_filter($enrolledusers, function ($u) use ($gradeableids) {
             return in_array($u->id, $gradeableids);
         });
     }
@@ -300,12 +317,14 @@ abstract class examactivity {
         if (empty($gradebookroles)) {
             return[];
         }
-        list($gradebookrolessql, $gradebookrolesparams) =
+        [$gradebookrolessql, $gradebookrolesparams] =
             $DB->get_in_or_equal($gradebookroles, SQL_PARAMS_NAMED, 'gradebookroles');
 
         // We want to query both the current context and parent contexts.
-        list($relatedctxsql, $relatedctxparams) = $DB->get_in_or_equal(
-            $this->context->get_parent_context_ids(true), SQL_PARAMS_NAMED, 'relatedctx'
+        [$relatedctxsql, $relatedctxparams] = $DB->get_in_or_equal(
+            $this->context->get_parent_context_ids(true),
+            SQL_PARAMS_NAMED,
+            'relatedctx'
         );
         $sql = "SELECT DISTINCT userid FROM {role_assignments} WHERE roleid $gradebookrolessql AND contextid $relatedctxsql";
         return  $DB->get_fieldset_sql($sql, array_merge($gradebookrolesparams, $relatedctxparams));
