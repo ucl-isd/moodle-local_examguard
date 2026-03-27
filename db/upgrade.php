@@ -63,7 +63,6 @@ function xmldb_local_examguard_upgrade($oldversion) {
     }
 
     if ($oldversion < 2025042500) {
-
         // Define table local_examguard_overrides to be created.
         $table = new xmldb_table('local_examguard_overrides');
 

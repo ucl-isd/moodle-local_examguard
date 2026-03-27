@@ -16,7 +16,6 @@
 
 namespace local_examguard\local;
 
-use context_course;
 use core\hook\output\before_standard_top_of_body_html_generation;
 use core\notification;
 use local_examguard\manager;
@@ -40,19 +39,20 @@ class hook_callbacks {
         global $PAGE, $USER;
 
         // Check if the current page is a course view page or a module view page.
-        if ((str_contains($PAGE->pagetype, 'course-view') || preg_match('/mod-(.+?)-view/', $PAGE->pagetype))
-            && $PAGE->course->id != SITEID) {
+        if (
+            (str_contains($PAGE->pagetype, 'course-view') || preg_match('/mod-(.+?)-view/', $PAGE->pagetype))
+            && $PAGE->course->id != SITEID
+        ) {
             try {
                 // Exam guard is enabled.
                 if (get_config('local_examguard', 'enabled')) {
-
                     // Do nothing if the current user is not an editing role, e.g. student.
                     if (!manager::user_has_an_editing_role($PAGE->course->id, $USER->id)) {
                         return;
                     }
 
                     // Ban course editing if the exam is in progress / release course editing if the exam is finished.
-                    list($editingbanned, $activeexamactivities) = manager::check_course_exam_status($PAGE->course->id);
+                    [$editingbanned, $activeexamactivities] = manager::check_course_exam_status($PAGE->course->id);
 
                     // Add notification if a course editing is banned.
                     if ($editingbanned) {
@@ -62,12 +62,22 @@ class hook_callbacks {
                         $renderer = $PAGE->get_renderer('local_examguard');
                         $PAGE->add_header_action($renderer->render_extend_time_button());
                     }
+
+                    // Load course hide warning JS on course view pages.
+                    if (str_contains($PAGE->pagetype, 'course-view')) {
+                        $scheduledcmids = manager::get_future_examactivity_cmids($PAGE->course);
+                        if (!empty($scheduledcmids)) {
+                            $PAGE->requires->js_call_amd(
+                                'local_examguard/course_hide_warning',
+                                'init',
+                                [$scheduledcmids]
+                            );
+                        }
+                    }
                 }
             } catch (\Exception $e) {
                 notification::add($e->getMessage(), notification::ERROR);
             }
         }
-
-        return;
     }
 }

@@ -25,7 +25,6 @@ namespace local_examguard\examactivity;
  * @author     Alex Yeung <k.yeung@ucl.ac.uk>
  */
 class examactivityfactory {
-
     /**
      * Return exam activity object.
      *
