@@ -56,6 +56,8 @@ class hook_callbacks {
 
                     // Add notification if a course editing is banned.
                     if ($editingbanned) {
+                        // Catch editing users who were not banned when the ban started, e.g. enrolled mid-exam.
+                        manager::assign_examguard_role($PAGE->course->id, $USER->id);
                         manager::show_notfication_banner($activeexamactivities);
 
                         // Show extend time button if applicable.
