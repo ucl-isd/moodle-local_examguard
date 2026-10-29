@@ -146,8 +146,8 @@ class manager {
      * @throws \dml_exception|\coding_exception
      */
     public static function user_has_an_editing_role(int $courseid, int $userid): bool {
-        // Get user roles in the course context.
-        $userroles = get_users_roles(context_course::instance($courseid), [], false);
+        // Get user roles in the course context, including roles inherited from parent contexts.
+        $userroles = get_users_roles(context_course::instance($courseid), [$userid]);
 
         // Get all editing roles in Moodle in ids array format.
         $editingrolesid = self::get_editing_roles();
@@ -227,9 +227,6 @@ class manager {
      * @param int $courseid The course id.
      * @param bool $preventediting
      * @return bool
-     * @throws \coding_exception
-     * @throws \dml_exception
-     * @throws \moodle_exception
      */
     public static function handle_users_roles(int $courseid, bool $preventediting): bool {
         global $DB;
@@ -244,13 +241,7 @@ class manager {
             return false;
         }
 
-        // Check if the role examguard exists.
-        $examguardrole = $DB->get_record('role', ['shortname' => 'localexamguard']);
-
-        // Exam guard role does not exist.
-        if (empty($examguardrole)) {
-            throw new \moodle_exception('error:role_not_exists', 'local_examguard');
-        }
+        $examguardroleid = self::get_examguard_roleid();
 
         // Get override record.
         $examcourse = self::get_examcourse_record($courseid);
@@ -264,10 +255,10 @@ class manager {
 
             if ($preventediting) {
                 // Assign the exam guard role to the user.
-                role_assign($examguardrole->id, $user->id, $context->id);
+                role_assign($examguardroleid, $user->id, $context->id);
             } else {
                 // Unassign the exam guard role from the user.
-                role_unassign($examguardrole->id, $user->id, $context->id);
+                role_unassign($examguardroleid, $user->id, $context->id);
             }
         }
 
@@ -280,6 +271,17 @@ class manager {
         }
 
         return false;
+    }
+
+    /**
+     * Assign the exam guard role to a user in the course, does nothing if already assigned.
+     *
+     * @param int $courseid The course id.
+     * @param int $userid The user id.
+     * @return void
+     */
+    public static function assign_examguard_role(int $courseid, int $userid): void {
+        role_assign(self::get_examguard_roleid(), $userid, context_course::instance($courseid)->id);
     }
 
     /**
@@ -330,5 +332,22 @@ class manager {
         }
 
         return $cmids;
+    }
+
+    /**
+     * Get the exam guard role id.
+     *
+     * @return int
+     * @throws \moodle_exception
+     */
+    private static function get_examguard_roleid(): int {
+        global $DB;
+
+        $roleid = $DB->get_field('role', 'id', ['shortname' => 'localexamguard']);
+        if (empty($roleid)) {
+            throw new \moodle_exception('error:role_not_exists', 'local_examguard');
+        }
+
+        return $roleid;
     }
 }
