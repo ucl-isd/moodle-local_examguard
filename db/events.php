@@ -22,6 +22,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @author     Alex Yeung <k.yeung@ucl.ac.uk>
  */
+
 defined('MOODLE_INTERNAL') || die();
 
 $observers = [

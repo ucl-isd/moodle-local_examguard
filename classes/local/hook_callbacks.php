@@ -46,8 +46,9 @@ class hook_callbacks {
             try {
                 // Exam guard is enabled.
                 if (get_config('local_examguard', 'enabled')) {
-                    // Do nothing if the current user is not an editing role, e.g. student.
-                    if (!manager::user_has_an_editing_role($PAGE->course->id, $USER->id)) {
+                    // Do nothing if the current user is not an editing role, e.g. student. Site admins always see the banner.
+                    $issiteadmin = is_siteadmin();
+                    if (!$issiteadmin && !manager::user_has_an_editing_role($PAGE->course->id, $USER->id)) {
                         return;
                     }
 
@@ -56,6 +57,11 @@ class hook_callbacks {
 
                     // Add notification if a course editing is banned.
                     if ($editingbanned) {
+                        // Catch editing users who were not banned when the ban started, e.g. enrolled mid-exam.
+                        // Site admins bypass role restrictions, so they keep editing and get no role.
+                        if (!$issiteadmin) {
+                            manager::assign_examguard_role($PAGE->course->id, $USER->id);
+                        }
                         manager::show_notfication_banner($activeexamactivities);
 
                         // Show extend time button if applicable.
