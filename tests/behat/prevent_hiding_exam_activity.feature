@@ -5,7 +5,9 @@ Feature: Prevent hiding exam activities
   I need to be prevented from hiding a future exam activity
 
   Background:
-    Given the following "users" exist:
+    # Moodle 6.0 moves the hide option from the action menu to a card dropdown that exam guard does not support yet.
+    Given the site is running Moodle version 5.9 or lower
+    And the following "users" exist:
       | username | firstname | lastname | email                |
       | teacher1 | Teacher   | 1        | teacher1@example.com |
     And the following "courses" exist:
